@@ -9,11 +9,16 @@ import torchvision.models as models
 
 
 class OccupancyNet(nn.Module):
-    def __init__(self):
+    def __init__(self, backbone='resnet'):
         super().__init__()
-        self.feature_extractor = MultiFeatureExtractor(backbone='resnet18', num_images=2)
-        self.attn_module = AttentionModule(embed_dim=512, num_heads=8, mlp_dim=512)
-        self.deconvnet = DeconvNet()
+        if backbone == 'resnet':
+            self.embed_dim = 512
+            self.feature_extractor = MultiFeatureExtractor(backbone='resnet18', weights=models.ResNet18_Weights, num_images=2)
+        elif backbone == 'regnet':
+            self.embed_dim = 440
+            self.feature_extractor = MultiFeatureExtractor(backbone='regnet_y_400mf', weights=models.RegNet_Y_400MF_Weights, num_images=2)
+        self.attn_module = AttentionModule(self.embed_dim)
+        self.deconvnet = DeconvNet(self.embed_dim)
 
     def forward(self, left_image, right_image):
         # PATCHING AND EMBEDDING
@@ -25,16 +30,16 @@ class OccupancyNet(nn.Module):
         fused_features = self.attn_module(left_features_flat, right_features_flat)
 
         # 3D DECONVOLUTIONS
-        fused_features = fused_features.view(-1, 512, 7, 7, 7)  # reshaping to 3D
+        fused_features = fused_features.view(-1, self.embed_dim, 7, 7, 7)  # reshaping to 3D
         output = self.deconvnet(fused_features)
 
         return output
         
 
 class MultiFeatureExtractor(nn.Module):
-    def __init__(self, backbone='resnet18', weights=models.ResNet18_Weights, num_images=2):
+    def __init__(self, backbone, weights, num_images):
         super().__init__()
-        self.model = getattr(models, backbone)(weights=models.ResNet18_Weights)
+        self.model = getattr(models, backbone)(weights=weights.DEFAULT)
         self.feature_extractors = nn.ModuleList([nn.Sequential(*list(self.model.children())[:-2]) for _ in range(num_images)])
 
     def forward(self, images):
@@ -159,12 +164,12 @@ class MLP(nn.Module):
 
 
 class DeconvNet(nn.Module):
-    def __init__(self):
+    def __init__(self, dim=512):
         super(DeconvNet, self).__init__()
         
         # Start with 512 channels, reduce to 256, then to 128, then to 64, and finally to 1 channel
         # Each deconvolution will double the spatial dimensions
-        self.deconv1 = nn.ConvTranspose3d(in_channels=512, out_channels=256, kernel_size=2, stride=2)
+        self.deconv1 = nn.ConvTranspose3d(in_channels=dim, out_channels=256, kernel_size=2, stride=2)
         self.deconv2 = nn.ConvTranspose3d(in_channels=256, out_channels=128, kernel_size=2, stride=2)
         self.deconv3 = nn.ConvTranspose3d(in_channels=128, out_channels=64, kernel_size=4, stride=2, padding=1)
         self.deconv4 = nn.ConvTranspose3d(in_channels=64, out_channels=1, kernel_size=2, stride=2)
