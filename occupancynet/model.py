@@ -7,52 +7,105 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 
+from efficientdet.model import *
 
 class OccupancyNet(nn.Module):
-    def __init__(self, backbone='resnet'):
+    def __init__(self, backbone, embed_dim=64, grid_size=24):
         super().__init__()
-        if backbone == 'resnet':
-            self.embed_dim = 512
-            self.feature_extractor = MultiFeatureExtractor(backbone='resnet18', weights=models.ResNet18_Weights, num_images=2)
-        elif backbone == 'regnet':
-            self.embed_dim = 440
-            self.feature_extractor = MultiFeatureExtractor(backbone='regnet_y_400mf', weights=models.RegNet_Y_400MF_Weights, num_images=2)
-        self.attn_module = AttentionModule(self.embed_dim)
+        self.backbone = backbone
+        self.embed_dim = embed_dim
+        self.grid_size = grid_size
+        self.models = {"resnet" : ["resnet18", models.ResNet18_Weights, [128, 256, 512]], # we should be able to determine the conv_channels from embed_dim!
+                        "regnet" : ["regnet_y_400mf", models.RegNet_Y_400MF_Weights, [104, 208, 440]], # we should be able to determine the conv_channels from embed_dim!
+                        "efficientnet" : ["efficientnet_b0", models.EfficientNet_B0_Weights, [40, 112, 320]]} # we should be able to determine the conv_channels from embed_dim!
+        self.left_feature_extractor = MultiscaleFeatureExtractor(self.models[self.backbone][0], self.models[self.backbone][1])
+        self.right_feature_extractor = MultiscaleFeatureExtractor(self.models[self.backbone][0], self.models[self.backbone][1])
+        self.left_bifpn = BiFPN(embed_dim, self.models[self.backbone][2], first_time=True)
+        self.right_bifpn = BiFPN(embed_dim, self.models[self.backbone][2], first_time=True)
+        self.attn_module = AttentionModule(embed_dim=self.embed_dim, grid_size=self.grid_size)
         self.deconvnet = DeconvNet(self.embed_dim)
 
     def forward(self, left_image, right_image):
         # PATCHING AND EMBEDDING
-        left_features, right_features = self.feature_extractor([left_image, right_image])
-        left_features_flat = left_features.view(left_features.size(0), left_features.size(1), -1).permute(0, 2, 1)
-        right_features_flat = right_features.view(right_features.size(0), right_features.size(1), -1).permute(0, 2, 1)
+        left_features = self.left_feature_extractor(left_image)
+        right_features = self.right_feature_extractor(right_image)
+
+        # BiFPN
+        left_multiscale_features = self.left_bifpn(list(left_features.values()))
+        right_multiscale_features = self.right_bifpn(list(right_features.values()))
+
+        # Flatten each tensor and swap channel and sequence axes
+        left_features_flat = []
+        right_features_flat = []
+        keys = ["p3_out", "p4_out", "p5_out", "p6_out", "p7_out"]
+        for key, value in zip(keys, left_multiscale_features):
+            value = value.view(value.size(0), value.size(1), -1)
+            left_features_flat.append(value.permute(0, 2, 1))
+        for key, value in zip(keys, right_multiscale_features):
+            value = value.view(value.size(0), value.size(1), -1)
+            right_features_flat.append(value.permute(0, 2, 1))
+
+        # Concatenate along axis=1, sequence
+        left_features_flat = torch.cat(left_features_flat, dim=1)
+        right_features_flat = torch.cat(right_features_flat, dim=1)
 
         # ENCODING
         fused_features = self.attn_module(left_features_flat, right_features_flat)
 
         # 3D DECONVOLUTIONS
-        fused_features = fused_features.view(-1, self.embed_dim, 7, 7, 7)  # reshaping to 3D
+        fused_features = fused_features.view(-1, self.embed_dim, self.grid_size, self.grid_size, self.grid_size)  # reshaping to 3D
         output = self.deconvnet(fused_features)
 
         return output
-        
+    
 
-class MultiFeatureExtractor(nn.Module):
-    def __init__(self, backbone, weights, num_images):
+class MultiscaleFeatureExtractor(nn.Module):
+    def __init__(self, backbone, weights, num_channels=64):
         super().__init__()
-        self.model = getattr(models, backbone)(weights=weights.DEFAULT)
-        self.feature_extractors = nn.ModuleList([nn.Sequential(*list(self.model.children())[:-2]) for _ in range(num_images)])
+        model = getattr(models, backbone)(weights=weights.DEFAULT)
 
-    def forward(self, images):
-        return [feature_extractor(x) for x, feature_extractor in zip(images, self.feature_extractors)]
+        if backbone == "resnet18":
+            feature_levels = {"layer2" : "p3",
+                              "layer3" : "p4",
+                              "layer4" : "p5"}
+            last_layer_idx = -2
+        elif backbone == "efficientnet_b0":
+            feature_levels = {"features.3" : "p3",
+                              "features.5" : "p4",
+                              "features.7" : "p5"}
+            last_layer_idx = -2
+        elif backbone == "regnet_y_400mf":
+            feature_levels = {"trunk_output.block2" : "p3",
+                              "trunk_output.block3" : "p4",
+                              "trunk_output.block4" : "p5"}
+            last_layer_idx = -2
+ 
+        self.features = {}
+
+        # Register hooks for each layer
+        for level, module in model.named_modules():
+            if level in feature_levels.keys():
+                module.register_forward_hook(self.hook_function(feature_levels[level]))
+
+        # Keep layers except for last two layers
+        self.feature_extractor = nn.Sequential(*list(model.children())[:last_layer_idx])
+
+    def hook_function(self, level):
+        def hook(model, input, output):
+            self.features[level] = output
+        return hook
+
+    def forward(self, x):
+        self.feature_extractor(x)
+        return self.features
     
 
 class AttentionModule(nn.Module):
-    def __init__(self, embed_dim=512, num_heads=8, mlp_dim=512, max_seq_length=1024, grid_size=7):
+    def __init__(self, embed_dim=512, num_heads=8, mlp_dim=512, max_seq_length=8192, grid_size=24):
         super().__init__()
 
         # Learnable queries
         self.queries = nn.Parameter(torch.randn(grid_size**3, embed_dim))
-        self.max_seq_length = max_seq_length  # Maximum expected sequence length for padding
 
         # Class token
         self.class_tokens = nn.Parameter(torch.randn(1, embed_dim))  # 1 for one class token

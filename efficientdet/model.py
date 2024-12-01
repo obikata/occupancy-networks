@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from torchvision.ops.boxes import nms as nms_torch
 
-from utils import *
+from .utils import *
 
 from torchvision import models, transforms
 from PIL import Image
