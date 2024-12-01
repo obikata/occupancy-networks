@@ -2,15 +2,10 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 
-
-import torch
-import torch.nn as nn
-import torchvision.models as models
-
-from efficientdet.model import *
+from efficientdet import BiFPN
 
 class OccupancyNet(nn.Module):
-    def __init__(self, backbone, embed_dim=64, grid_size=24):
+    def __init__(self, backbone, embed_dim=64, grid_size=16):
         super().__init__()
         self.backbone = backbone
         self.embed_dim = embed_dim
@@ -18,8 +13,8 @@ class OccupancyNet(nn.Module):
         self.models = {"resnet" : ["resnet18", models.ResNet18_Weights, [128, 256, 512]], # we should be able to determine the conv_channels from embed_dim!
                         "regnet" : ["regnet_y_400mf", models.RegNet_Y_400MF_Weights, [104, 208, 440]], # we should be able to determine the conv_channels from embed_dim!
                         "efficientnet" : ["efficientnet_b0", models.EfficientNet_B0_Weights, [40, 112, 320]]} # we should be able to determine the conv_channels from embed_dim!
-        self.left_feature_extractor = MultiscaleFeatureExtractor(self.models[self.backbone][0], self.models[self.backbone][1])
-        self.right_feature_extractor = MultiscaleFeatureExtractor(self.models[self.backbone][0], self.models[self.backbone][1])
+        self.left_feature_extractor = MultiscaleFeatureExtractor(self.models[self.backbone][0], self.models[self.backbone][1], self.embed_dim)
+        self.right_feature_extractor = MultiscaleFeatureExtractor(self.models[self.backbone][0], self.models[self.backbone][1], self.embed_dim)
         self.left_bifpn = BiFPN(embed_dim, self.models[self.backbone][2], first_time=True)
         self.right_bifpn = BiFPN(embed_dim, self.models[self.backbone][2], first_time=True)
         self.attn_module = AttentionModule(embed_dim=self.embed_dim, grid_size=self.grid_size)
@@ -101,7 +96,7 @@ class MultiscaleFeatureExtractor(nn.Module):
     
 
 class AttentionModule(nn.Module):
-    def __init__(self, embed_dim=512, num_heads=8, mlp_dim=512, max_seq_length=8192, grid_size=24):
+    def __init__(self, embed_dim=64, num_heads=8, mlp_dim=512, max_seq_length=2048, grid_size=16):
         super().__init__()
 
         # Learnable queries
@@ -161,7 +156,7 @@ class AttentionModule(nn.Module):
 
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, embed_dim=512, num_heads=8, mlp_dim=512):
+    def __init__(self, embed_dim=64, num_heads=8, mlp_dim=512):
         super().__init__()
 
         # Transformer layers
@@ -203,7 +198,7 @@ class TransformerEncoder(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, embed_dim=512, hidden_dim=512):
+    def __init__(self, embed_dim=64, hidden_dim=512):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(embed_dim, hidden_dim),

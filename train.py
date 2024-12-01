@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset
 
-from occupancynet.model import OccupancyNet
+from occupancynet import *
 
 class StereoDataset(Dataset):
     def __init__(self, image_pairs, output_tensors):
