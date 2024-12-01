@@ -32,9 +32,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Left and right images of stereo cameras, and 3D occupancy maps
 # TODO: Use simulated stereo camera images and corresponding occupancy maps
-left_image = torch.randn(3, 224, 224)
-right_image = torch.randn(3, 224, 224)
-output_tensor = torch.zeros(1, 112, 112, 112)
+left_image = torch.randn(3, 256, 256)
+right_image = torch.randn(3, 256, 256)
+output_tensor = torch.zeros(1, 256, 256, 256)
 
 image_pairs = [(left_image, right_image), (left_image, right_image)]
 output_tensors = [output_tensor, output_tensor]
@@ -42,7 +42,7 @@ output_tensors = [output_tensor, output_tensor]
 train_dataset = StereoDataset(image_pairs, output_tensors)
 train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True)
 
-model = OccupancyNet()
+model = OccupancyNet('regnet', embed_dim=64, grid_size=16)
 model.to(device)
 
 optimizer = Adam(model.parameters(), lr=0.001)
