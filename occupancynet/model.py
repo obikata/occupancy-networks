@@ -99,7 +99,7 @@ class MultiscaleFeatureExtractor(nn.Module):
     
 
 class AttentionModule(nn.Module):
-    def __init__(self, embed_dim=64, num_heads=8, mlp_dim=512, max_seq_length=2048, grid_size=16):
+    def __init__(self, embed_dim=64, num_heads=8, mlp_dim=64, max_seq_length=2048, grid_size=16):
         super().__init__()
 
         # Learnable queries
@@ -159,7 +159,7 @@ class AttentionModule(nn.Module):
 
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, embed_dim=64, num_heads=8, mlp_dim=512):
+    def __init__(self, embed_dim=64, num_heads=8, mlp_dim=64):
         super().__init__()
 
         # Transformer layers
@@ -201,7 +201,7 @@ class TransformerEncoder(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, embed_dim=64, hidden_dim=512):
+    def __init__(self, embed_dim=64, hidden_dim=64):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(embed_dim, hidden_dim),
