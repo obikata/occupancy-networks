@@ -2,7 +2,10 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 
-from efficientdet import BiFPN
+# import BiFPN class from submodule
+import sys
+sys.path.append('yaep/')
+from yaep.efficientdet.model import BiFPN
 
 class OccupancyNet(nn.Module):
     def __init__(self, backbone, embed_dim=64, grid_size=16):

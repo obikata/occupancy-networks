@@ -1,0 +1,3 @@
+[submodule "yaep"]
+	path = yaep
+	url = https://github.com/zylo117/Yet-Another-EfficientDet-Pytorch.git
