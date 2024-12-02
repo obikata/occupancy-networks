@@ -215,15 +215,15 @@ class MLP(nn.Module):
 
 
 class DeconvNet(nn.Module):
-    def __init__(self, dim=512):
+    def __init__(self, dim=64):
         super(DeconvNet, self).__init__()
         
-        # Start with 512 channels, reduce to 256, then to 128, then to 64, and finally to 1 channel
+        # Start with 64 channels, reduce to 32, then to 16, then to 8, and finally to 1 channel
         # Each deconvolution will double the spatial dimensions
-        self.deconv1 = nn.ConvTranspose3d(in_channels=dim, out_channels=256, kernel_size=2, stride=2)
-        self.deconv2 = nn.ConvTranspose3d(in_channels=256, out_channels=128, kernel_size=2, stride=2)
-        self.deconv3 = nn.ConvTranspose3d(in_channels=128, out_channels=64, kernel_size=4, stride=2, padding=1)
-        self.deconv4 = nn.ConvTranspose3d(in_channels=64, out_channels=1, kernel_size=2, stride=2)
+        self.deconv1 = nn.ConvTranspose3d(in_channels=dim, out_channels=dim//2, kernel_size=2, stride=2)
+        self.deconv2 = nn.ConvTranspose3d(in_channels=dim//2, out_channels=dim//4, kernel_size=2, stride=2)
+        self.deconv3 = nn.ConvTranspose3d(in_channels=dim//4, out_channels=dim//8, kernel_size=4, stride=2, padding=1)
+        self.deconv4 = nn.ConvTranspose3d(in_channels=dim//8, out_channels=1, kernel_size=2, stride=2)
         
         # ReLU activation for intermediate layers
         self.relu = nn.ReLU()
