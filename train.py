@@ -91,6 +91,10 @@ optimizer = Adam(model.parameters(), lr=0.001)
 
 num_epochs = 100
 
+# Initialize best loss as infinity
+best_loss = float('inf')
+best_model = None
+
 for epoch in range(num_epochs):
     model.train()
     epoch_loss = 0
@@ -111,4 +115,19 @@ for epoch in range(num_epochs):
 
         epoch_loss += loss.item()
 
-    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss/len(train_loader):.4f}")
+    # Calculate average loss for the epoch
+    avg_loss = epoch_loss / len(train_loader)
+    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}")
+
+    # Check if this model is better than the best one seen so far
+    if avg_loss < best_loss:
+        best_loss = avg_loss
+        # Save the model's state dict
+        best_model = model.state_dict().copy()  # Copy to avoid reference issues
+
+# After the training loop, save the best model weights
+if best_model is not None:
+    torch.save(best_model, 'best.pt')
+    print(f"Best model saved with loss: {best_loss:.4f}")
+else:
+    print("No model was saved as no improvement was observed.")
