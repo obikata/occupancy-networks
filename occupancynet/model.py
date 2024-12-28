@@ -21,7 +21,7 @@ class OccupancyNet(nn.Module):
         self.left_bifpn = BiFPN(embed_dim, self.models[self.backbone][2], first_time=True)
         self.right_bifpn = BiFPN(embed_dim, self.models[self.backbone][2], first_time=True)
         self.attn_module = AttentionModule(embed_dim=self.embed_dim, grid_size=self.grid_size)
-        self.deconvnet = DeconvNet(self.embed_dim)
+        self.deconvnet = DeconvNet(self.embed_dim, num_layers=1)
 
     def forward(self, left_image, right_image):
         # PATCHING AND EMBEDDING
@@ -50,7 +50,7 @@ class OccupancyNet(nn.Module):
         # ENCODING
         fused_features = self.attn_module(left_features_flat, right_features_flat)
 
-        # 3D DECONVOLUTIONS
+        # 3D DECONVOLUTIONS AND PREDICT OCCUPANCY
         fused_features = fused_features.view(-1, self.embed_dim, self.grid_size, self.grid_size, self.grid_size)  # reshaping to 3D
         output = self.deconvnet(fused_features)
 
@@ -215,30 +215,33 @@ class MLP(nn.Module):
 
 
 class DeconvNet(nn.Module):
-    def __init__(self, dim=64):
+    def __init__(self, dim=64, num_layers=4):
         super(DeconvNet, self).__init__()
         
-        # Start with 64 channels, reduce to 32, then to 16, then to 8, and finally to 1 channel
-        # Each deconvolution will double the spatial dimensions
-        self.deconv1 = nn.ConvTranspose3d(in_channels=dim, out_channels=dim//2, kernel_size=2, stride=2)
-        self.deconv2 = nn.ConvTranspose3d(in_channels=dim//2, out_channels=dim//4, kernel_size=2, stride=2)
-        self.deconv3 = nn.ConvTranspose3d(in_channels=dim//4, out_channels=dim//8, kernel_size=4, stride=2, padding=1)
-        self.deconv4 = nn.ConvTranspose3d(in_channels=dim//8, out_channels=1, kernel_size=2, stride=2)
-        
-        # ReLU activation for intermediate layers
+        # Store layers in a list
+        self.deconvs = nn.ModuleList()
         self.relu = nn.ReLU()
-        
-        # Sigmoid to get binary output (0 or 1)
         self.sigmoid = nn.Sigmoid()
+        
+        # Initial channel count
+        channels = dim
+        
+        for i in range(num_layers):
+            # Determine the number of output channels for this layer
+            out_channels = channels // 2 if i < num_layers - 1 else 1  # Last layer outputs 1 channel
+            self.deconvs.append(nn.ConvTranspose3d(
+                in_channels=channels, 
+                out_channels=out_channels, 
+                kernel_size=2, 
+                stride=2
+            ))
+            channels = out_channels  # Update channel count for next layer
 
     def forward(self, x):
-        # x shape: [batch_size, 512, 7, 7, 7]
-        x = self.relu(self.deconv1(x))
-        # Shape is now [batch_size, 256, 14, 14, 14]
-        x = self.relu(self.deconv2(x))
-        # Shape is now [batch_size, 128, 28, 28, 28]
-        x = self.relu(self.deconv3(x))
-        # Shape is now [batch_size, 64, 56, 56, 56]
-        x = self.sigmoid(self.deconv4(x))
-        # Shape is now [batch_size, 1, 112, 112, 112]
+        for i, deconv in enumerate(self.deconvs):
+            x = deconv(x)
+            if i < len(self.deconvs) - 1:  # Apply ReLU to all but the last layer
+                x = self.relu(x)
+            else:  # Apply sigmoid to the last layer
+                x = self.sigmoid(x)
         return x
