@@ -57,7 +57,7 @@ for i, path in enumerate(paths):
     image_pairs.append((left_image, right_image))
     output_tensors.append(output_tensor)
 
-for (left_image, right_image), ouput_tensor in zip(image_pairs, output_tensors):
+for (left_image, right_image), output_tensor in zip(image_pairs, output_tensors):
     # Predict occupancy map
     occupancy_map = model(left_image.unsqueeze(0), right_image.unsqueeze(0))
 
