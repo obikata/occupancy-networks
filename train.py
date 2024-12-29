@@ -70,7 +70,7 @@ for i, path in enumerate(paths):
         right_image = transform(img)
     
     # Load occupancy grid (output tensor)
-    output_tensor = torch.from_numpy(np.load(path)).unsqueeze(0)  # Add batch dimension
+    output_tensor = torch.from_numpy(np.load(path)).unsqueeze(0)  # Add channel dimension
     output_tensor = output_tensor.float()
 
     # Ensure output_tensor has the correct shape if needed
