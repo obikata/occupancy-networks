@@ -10,6 +10,16 @@ from torchvision import transforms
 
 from occupancynet import *
 
+def dice_loss(pred, target):
+    smooth = 1.
+    intersection = (pred * target).sum()
+    dice = (2. * intersection + smooth) / (pred.sum() + target.sum() + smooth)
+    return 1 - dice
+
+def loss_function(pred, target):
+    # return F.binary_cross_entropy(pred, target)
+    return F.binary_cross_entropy(pred, target) + dice_loss(pred, target)  # Combining BCE with Dice for better segmentation
+
 # Define a custom transform to handle alpha channel
 def remove_alpha_channel(img):
     return img.convert('RGB') if img.mode == 'RGBA' else img
@@ -26,16 +36,6 @@ class StereoDataset(Dataset):
         left_image, right_image = self.image_pairs[idx]
         output_tensor = self.output_tensors[idx]
         return (left_image, right_image), output_tensor
-
-def dice_loss(pred, target):
-    smooth = 1.
-    intersection = (pred * target).sum()
-    dice = (2. * intersection + smooth) / (pred.sum() + target.sum() + smooth)
-    return 1 - dice
-
-def loss_function(pred, target):
-    # return F.binary_cross_entropy(pred, target)
-    return F.binary_cross_entropy(pred, target) + dice_loss(pred, target)  # Combining BCE with Dice for better segmentation
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

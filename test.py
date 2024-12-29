@@ -3,6 +3,7 @@ import glob
 import numpy as np
 
 import torch
+from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
 from occupancynet import *
@@ -11,9 +12,20 @@ from occupancynet import *
 def remove_alpha_channel(img):
     return img.convert('RGB') if img.mode == 'RGBA' else img
 
-model = OccupancyNet('regnet', embed_dim=64, grid_size=16)
-model.load_state_dict(torch.load('best.pt', weights_only=True))
-model.eval()  # Set the model to evaluation mode
+class StereoDataset(Dataset):
+    def __init__(self, image_pairs, output_tensors):
+        self.image_pairs = image_pairs
+        self.output_tensors = output_tensors
+
+    def __len__(self):
+        return len(self.image_pairs)
+    
+    def __getitem__(self, idx):
+        left_image, right_image = self.image_pairs[idx]
+        output_tensor = self.output_tensors[idx]
+        return (left_image, right_image), output_tensor
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Left and right images of stereo cameras, and 3D occupancy maps
 left_image_root = "blender_stereo_images/left_images/"
@@ -57,21 +69,28 @@ for i, path in enumerate(paths):
     image_pairs.append((left_image, right_image))
     output_tensors.append(output_tensor)
 
-for (left_image, right_image), output_tensor in zip(image_pairs, output_tensors):
-    # Predict occupancy map
-    occupancy_map = model(left_image.unsqueeze(0), right_image.unsqueeze(0))
+test_dataset = StereoDataset(image_pairs, output_tensors)
+test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)  # Batch size of 1 since you process one pair at a time
 
-    # Remove batch and channel dimensions for element-wise comparison
-    occupancy_map = occupancy_map.squeeze()
+model = OccupancyNet('regnet', embed_dim=64, grid_size=16)
+model.load_state_dict(torch.load('best.pt', weights_only=True))
+model.to(device)  # Move model to GPU
+model.eval()  # Set the model to evaluation mode
+
+for (left_images, right_images), targets in test_loader:
+    left_images, right_images, targets = left_images.to(device), right_images.to(device), targets.to(device)
+
+    # Predict occupancy map
+    occupancy_map = model(left_images, right_images)
         
     # Convert to binary if they are not already (assuming a threshold of 0.5)
     if not occupancy_map.dtype == torch.bool:
         occupancy_map = (occupancy_map > 0.5).float()
-    if not output_tensor.dtype == torch.bool:
-        output_tensor = (output_tensor > 0.5).float()
+    if not targets.dtype == torch.bool:
+        targets = (targets > 0.5).float()
     
     # Compute accuracy
-    correct_predictions = (occupancy_map == output_tensor).sum().item()
+    correct_predictions = (occupancy_map == targets).sum().item()
     total_voxels = occupancy_map.numel()
     accuracy = correct_predictions / total_voxels
     
